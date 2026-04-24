@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Spatial Tracking: Absolute Coordinate Setup</title>
+    <style>
+        /* --- Color Palette Configuration --- */
+        :root {
+            --bg-page: #020617;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            
+            --panel-bg: rgba(15, 23, 42, 0.95);
+            --panel-border: #1e293b;
+            
+            --card-bg: #0f172a;
+            --card-border: #38bdf8;
+            
+            --accent-main: #10b981;
+            --accent-highlight: #fbbf24;
+            
+            --sensor-bg: rgba(0, 0, 0, 0.9);
+            --sensor-border: #334155;
+            --screen-view-bg: #050505;
+        }
+
+        /* --- UI Styles --- */
+        body { margin: 0; overflow: hidden; background-color: var(--bg-page); color: var(--text-primary); font-family: 'Segoe UI', sans-serif; }
+        
+        #ui-panel {
+            position: absolute; top: 20px; left: 20px; background: var(--panel-bg); 
+            padding: 24px; border-radius: 16px; border: 1px solid var(--panel-border); width: 340px; z-index: 1000;
+            backdrop-filter: blur(10px); box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        h2 { margin: 0 0 15px 0; font-size: 18px; color: var(--accent-main); text-align: center; }
+        .control-row { margin-bottom: 15px; }
+        
+        .label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .label-text { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+        .value-badge { 
+            font-size: 12px; color: var(--accent-highlight); font-family: monospace; font-weight: bold;
+            background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--panel-border);
+        }
+        
+        input[type="range"] { width: 100%; accent-color: var(--accent-main); cursor: pointer; margin: 0; }
+        
+        .data-card { background: var(--card-bg); border-radius: 8px; padding: 12px; margin-top: 15px; border-left: 4px solid var(--card-border); }
+        .pixel-text { font-family: 'Courier New', monospace; font-size: 18px; color: var(--accent-highlight); font-weight: bold; text-align: center; }
+        .note-text { font-size: 10px; color: var(--text-secondary); margin-top: 5px; text-align: center; line-height: 1.4; }
+        
+        #sensor-panel { position: absolute; bottom: 30px; right: 30px; display: flex; gap: 20px; z-index: 1000; }
+        .sensor-box { background: var(--sensor-bg); border: 1px solid var(--sensor-border); border-radius: 12px; padding: 12px; width: 220px; text-align: center; }
+        .screen-view { width: 100%; height: 140px; background: var(--screen-view-bg); position: relative; overflow: hidden; border-radius: 4px; border: 1px solid var(--panel-border); }
+        .dot { width: 10px; height: 10px; background: var(--accent-highlight); border-radius: 50%; position: absolute; transform: translate(-50%, -50%); box-shadow: 0 0 15px var(--accent-highlight); }
+        .pixel-val { font-size: 12px; color: var(--accent-main); margin-top: 8px; font-family: monospace; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2>3D Tracking: Industrial Setup</h2>
+        
+        <div class="control-row">
+            <div class="label-row">
+                <span class="label-text">Physical X [0 ~ 160 mm]</span>
+                <span class="value-badge" id="val-x">80 mm</span>
+            </div>
+            <input type="range" id="x-slider" min="0" max="160" value="80">
+        </div>
+        
+        <div class="control-row">
+            <div class="label-row">
+                <span class="label-text">Physical Y [0 ~ 90 mm]</span>
+                <span class="value-badge" id="val-y">45 mm</span>
+            </div>
+            <input type="range" id="y-slider" min="0" max="90" value="45">
+        </div>
+        
+        <div class="control-row">
+            <div class="label-row">
+                <span class="label-text">Physical Z [0 ~ 130 mm]</span>
+                <span class="value-badge" id="val-z">50 mm</span>
+            </div>
+            <input type="range" id="z-slider" min="0" max="130" value="50">
+        </div>
+
+        <div class="data-card">
+            <span class="label-text" style="text-align:center;">3D Spatial Mapping</span>
+            <div class="pixel-text">
+                PX: <span id="px-x">960</span><br>
+                PY: <span id="px-y">540</span><br>
+                PZ: <span id="px-z">600</span>
+            </div>
+            <div class="note-text">
+                Uniform Scale: 1 mm = 12 Units<br>
+                (Max PZ = 130 * 12 = 1560)
+            </div>
+        </div>
+    </div>
+
+    <div id="sensor-panel">
+        <div class="sensor-box">
+            <div class="label-text">Left Cam Image</div>
+            <div class="screen-view"><div class="dot" id="dot-l"></div></div>
+            <div class="pixel-val" id="uv-l">u: 320, v: 240</div>
+        </div>
+        <div class="sensor-box">
+            <div class="label-text">Right Cam Image</div>
+            <div class="screen-view"><div class="dot" id="dot-r"></div></div>
+            <div class="pixel-val" id="uv-r">u: 320, v: 240</div>
+        </div>
+    </div>
+
+    <script>
+        const SCENE_COLORS = {
+            ambientLight: 0xffffff,
+            dirLight: 0xffffff,
+            gridMain: 0x1e293b,
+            gridLines: 0x0f172a,
+            
+            screenBezel: 0x111111,
+            screenActive: 0x0a1428,
+            screenGlow: 0x051020,
+            
+            camBody: 0x222222,
+            camLens: 0x0a0a0a,
+            camGlass: 0x1e3a8a,
+            camText: '#10b981',
+            
+            fingerPoint: 0xfbbf24,
+            rayBeam: 0x10b981
+        };
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1500);
+        camera.position.set(280, 150, 250);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(80, 45, 0);
+
+        scene.add(new THREE.AmbientLight(SCENE_COLORS.ambientLight, 0.4));
+        const dirLight = new THREE.DirectionalLight(SCENE_COLORS.dirLight, 0.8);
+        dirLight.position.set(180, 200, 100);
+        scene.add(dirLight);
+
+        const gridHelper = new THREE.GridHelper(300, 30, SCENE_COLORS.gridMain, SCENE_COLORS.gridLines);
+        gridHelper.position.set(80, 0, 0);
+        scene.add(gridHelper);
+
+        const displayGroup = new THREE.Group();
+        
+        const bezelGeo = new THREE.BoxGeometry(164, 94, 2);
+        const bezelMat = new THREE.MeshPhongMaterial({ color: SCENE_COLORS.screenBezel, shininess: 20 });
+        const screenBezel = new THREE.Mesh(bezelGeo, bezelMat);
+        screenBezel.position.set(0, 0, -1);
+        displayGroup.add(screenBezel);
+
+        const screenGeo = new THREE.PlaneGeometry(160, 90);
+        const screenMat = new THREE.MeshPhongMaterial({ 
+            color: SCENE_COLORS.screenActive, 
+            emissive: SCENE_COLORS.screenGlow,
+            shininess: 100,
+            side: THREE.FrontSide 
+        });
+        const activeScreen = new THREE.Mesh(screenGeo, screenMat);
+        activeScreen.position.set(0, 0, 0.1);
+        displayGroup.add(activeScreen);
+
+        displayGroup.position.set(80, 45, 0);
+        scene.add(displayGroup);
+
+        function createCameraModel(x, isLeft, labelStr) {
+            const group = new THREE.Group();
+            const camRig = new THREE.Group();
+            
+            camRig.rotation.order = 'YXZ'; 
+            camRig.rotation.y = isLeft ? Math.PI/4 : -Math.PI/4;
+            camRig.rotation.x = -Math.PI/6;
+
+            const bodyGeo = new THREE.BoxGeometry(10, 8, 12);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: SCENE_COLORS.camBody, shininess: 20 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            camRig.add(body);
+
+            const lensGeo = new THREE.CylinderGeometry(3.5, 3.5, 4, 24);
+            const lensMat = new THREE.MeshPhongMaterial({ color: SCENE_COLORS.camLens, shininess: 80 });
+            const lens = new THREE.Mesh(lensGeo, lensMat);
+            lens.rotation.x = Math.PI / 2;
+            lens.position.z = 8;
+            camRig.add(lens);
+
+            const glassGeo = new THREE.CylinderGeometry(2.5, 2.5, 4.2, 24);
+            const glassMat = new THREE.MeshPhongMaterial({ color: SCENE_COLORS.camGlass, shininess: 150, transparent: true, opacity: 0.9 });
+            const glass = new THREE.Mesh(glassGeo, glassMat);
+            glass.rotation.x = Math.PI / 2;
+            glass.position.z = 8;
+            camRig.add(glass);
+
+            group.add(camRig);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.font = 'bold 32px "Segoe UI", sans-serif';
+            ctx.fillStyle = SCENE_COLORS.camText;
+            ctx.textAlign = 'center';
+            ctx.fillText(labelStr, 128, 45);
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(30, 7.5, 1);
+            sprite.position.set(0, 15, 0);
+            group.add(sprite);
+
+            group.position.set(x, 0, 0);
+            scene.add(group);
+            return group;
+        }
+
+        createCameraModel(0, true, "Left Cam");
+        createCameraModel(160, false, "Right Cam");
+
+        const finger = new THREE.Mesh(
+            new THREE.SphereGeometry(3, 24, 24), 
+            new THREE.MeshBasicMaterial({ color: SCENE_COLORS.fingerPoint })
+        );
+        scene.add(finger);
+
+        const rayMat = new THREE.LineBasicMaterial({ color: SCENE_COLORS.rayBeam, transparent: true, opacity: 0.5 });
+        let rayL, rayR;
+
+        const H_FOV = 140 * (Math.PI / 180);
+        const V_FOV = 100 * (Math.PI / 180);
+
+        // Constant Scale Factor (12 px per mm)
+        const PIXEL_PER_MM = 1920 / 160;
+
+        function update() {
+            const fx = parseFloat(document.getElementById('x-slider').value);
+            const fy = parseFloat(document.getElementById('y-slider').value);
+            const fz = parseFloat(document.getElementById('z-slider').value);
+            
+            document.getElementById('val-x').textContent = fx + ' mm';
+            document.getElementById('val-y').textContent = fy + ' mm';
+            document.getElementById('val-z').textContent = fz + ' mm';
+
+            finger.position.set(fx, fy, fz);
+
+            if(rayL) scene.remove(rayL);
+            if(rayR) scene.remove(rayR);
+            rayL = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), finger.position]), rayMat);
+            rayR = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(160,0,0), finger.position]), rayMat);
+            scene.add(rayL);
+            scene.add(rayR);
+
+            // Isotropic 3D Mapping
+            const px = Math.round(fx * PIXEL_PER_MM);
+            const py = Math.round(1080 - (fy * PIXEL_PER_MM));
+            const pz = Math.round(fz * PIXEL_PER_MM);
+
+            document.getElementById('px-x').textContent = px;
+            document.getElementById('px-y').textContent = py;
+            document.getElementById('px-z').textContent = pz;
+
+            calculateSensor(fx, fy, fz);
+        }
+
+        function calculateSensor(fx, fy, fz) {
+            const dxL = fx;
+            const dzL = fz;
+            const dyL = fy;
+            const axL = Math.atan2(dxL, dzL + 0.1) - Math.PI/4;
+            const ayL = Math.atan2(dyL, Math.sqrt(dxL*dxL + dzL*dzL)) - Math.PI/6;
+            updateDot('l', axL, ayL);
+
+            const dxR = fx - 160;
+            const axR = Math.atan2(dxR, dzL + 0.1) + Math.PI/4;
+            const ayR = Math.atan2(dyL, Math.sqrt(dxR*dxR + dzL*dzL)) - Math.PI/6;
+            updateDot('r', axR, ayR);
+        }
+
+        function updateDot(side, ax, ay) {
+            const u = 320 + (ax / (H_FOV/2)) * 320;
+            const v = 240 - (ay / (V_FOV/2)) * 240;
+            const dot = document.getElementById('dot-' + side);
+            dot.style.left = (u / 640 * 100) + "%";
+            dot.style.top = (v / 480 * 100) + "%";
+            document.getElementById('uv-' + side).textContent = `u: ${Math.round(u)}, v: ${Math.round(v)}`;
+        }
+
+        document.querySelectorAll('input').forEach(i => i.addEventListener('input', update));
+        update();
+
+        function animate() { 
+            requestAnimationFrame(animate); 
+            controls.update(); 
+            renderer.render(scene, camera); 
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
